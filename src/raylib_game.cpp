@@ -12,9 +12,16 @@
 *
 ********************************************************************************************/
 
-#include "raylib.h"
-#include "screens.h"    // NOTE: Declares global (extern) variables and screens functions
 
+#include "game/screens/screen.h"    
+#include "game/screens/title_screen.h"
+#include "game/screens/logo_screen.h"
+#include "game/screens/ending_screen.h"
+#include "game/screens/game_screen.h"
+#include "game.h"
+#include "raylib.h"
+#include <map>
+#include <iostream>
 #if defined(PLATFORM_WEB)
     #include <emscripten/emscripten.h>
 #endif
@@ -23,7 +30,7 @@
 // Shared Variables Definition (global)
 // NOTE: Those variables are shared between modules through screens.h
 //----------------------------------------------------------------------------------
-GameScreen currentScreen = 0;
+Screen::GameScreen currentScreen = Screen::LOGO;
 Font font = { 0 };
 Music music = { 0 };
 Sound fxCoin = { 0 };
@@ -38,8 +45,8 @@ static const int screenHeight = 450;
 static float transAlpha = 0.0f;
 static bool onTransition = false;
 static bool transFadeOut = false;
-static int transFromScreen = -1;
-static int transToScreen = -1;
+static Screen::GameScreen transFromScreen;
+static Screen::GameScreen transToScreen;
 
 //----------------------------------------------------------------------------------
 // Local Functions Declaration
@@ -52,11 +59,22 @@ static void DrawTransition(void);           // Draw transition effect (full-scre
 
 static void UpdateDrawFrame(void);          // Update and draw one frame
 
+
+static std::map <Screen::GameScreen, Screen*> screens_map;
+
+// Screen currentScreen;
 //----------------------------------------------------------------------------------
 // Main entry point
 //----------------------------------------------------------------------------------
 int main(void)
 {
+    
+    screens_map.insert ( std::make_pair<Screen::GameScreen, Screen*> (Screen::LOGO,new LogoScreen() ) ); 
+    screens_map.insert ( std::make_pair<Screen::GameScreen, Screen*> (Screen::TITLE,new TitleScreen() ) ); 
+    screens_map.insert ( std::make_pair<Screen::GameScreen, Screen*> (Screen::GAMEPLAY,new GameScreen() ) ); 
+    screens_map.insert ( std::make_pair<Screen::GameScreen, Screen*> (Screen::ENDING,new EndingScreen() ) ); 
+    
+    
     // Initialization
     //---------------------------------------------------------
     InitWindow(screenWidth, screenHeight, "raylib game template");
@@ -72,8 +90,9 @@ int main(void)
     PlayMusicStream(music);
 
     // Setup and init first screen
-    currentScreen = LOGO;
-    InitLogoScreen();
+    currentScreen = Screen::LOGO;
+
+    // InitLogoScreen();
 
 #if defined(PLATFORM_WEB)
     emscripten_set_main_loop(UpdateDrawFrame, 60, 1);
@@ -91,14 +110,8 @@ int main(void)
     // De-Initialization
     //--------------------------------------------------------------------------------------
     // Unload current screen data before closing
-    switch (currentScreen)
-    {
-        case LOGO: UnloadLogoScreen(); break;
-        case TITLE: UnloadTitleScreen(); break;
-        case GAMEPLAY: UnloadGameplayScreen(); break;
-        case ENDING: UnloadEndingScreen(); break;
-        default: break;
-    }
+    screens_map[currentScreen]->UnloadScreen();
+    screens_map.clear();
 
     // Unload global data loaded
     UnloadFont(font);
@@ -119,27 +132,10 @@ int main(void)
 // Change to next screen, no transition
 static void ChangeToScreen(int screen)
 {
-    // Unload current screen
-    switch (currentScreen)
-    {
-        case LOGO: UnloadLogoScreen(); break;
-        case TITLE: UnloadTitleScreen(); break;
-        case GAMEPLAY: UnloadGameplayScreen(); break;
-        case ENDING: UnloadEndingScreen(); break;
-        default: break;
-    }
+    screens_map[currentScreen]->UnloadScreen();
+    screens_map[static_cast<Screen::GameScreen>(screen)]->InitScreen();
 
-    // Init next screen
-    switch (screen)
-    {
-        case LOGO: InitLogoScreen(); break;
-        case TITLE: InitTitleScreen(); break;
-        case GAMEPLAY: InitGameplayScreen(); break;
-        case ENDING: InitEndingScreen(); break;
-        default: break;
-    }
-
-    currentScreen = screen;
+    currentScreen = static_cast<Screen::GameScreen> (screen);
 }
 
 // Request transition to next screen
@@ -148,7 +144,7 @@ static void TransitionToScreen(int screen)
     onTransition = true;
     transFadeOut = false;
     transFromScreen = currentScreen;
-    transToScreen = screen;
+    transToScreen = static_cast<Screen::GameScreen> (screen);
     transAlpha = 0.0f;
 }
 
@@ -164,27 +160,8 @@ static void UpdateTransition(void)
         if (transAlpha > 1.01f)
         {
             transAlpha = 1.0f;
-
-            // Unload current screen
-            switch (transFromScreen)
-            {
-                case LOGO: UnloadLogoScreen(); break;
-                case TITLE: UnloadTitleScreen(); break;
-                case OPTIONS: UnloadOptionsScreen(); break;
-                case GAMEPLAY: UnloadGameplayScreen(); break;
-                case ENDING: UnloadEndingScreen(); break;
-                default: break;
-            }
-
-            // Load next screen
-            switch (transToScreen)
-            {
-                case LOGO: InitLogoScreen(); break;
-                case TITLE: InitTitleScreen(); break;
-                case GAMEPLAY: InitGameplayScreen(); break;
-                case ENDING: InitEndingScreen(); break;
-                default: break;
-            }
+            screens_map[transFromScreen]->UnloadScreen();
+            screens_map[transToScreen]->InitScreen();
 
             currentScreen = transToScreen;
 
@@ -201,8 +178,8 @@ static void UpdateTransition(void)
             transAlpha = 0.0f;
             transFadeOut = false;
             onTransition = false;
-            transFromScreen = -1;
-            transToScreen = -1;
+            // transFromScreen;
+            // transToScreen;
         }
     }
 }
@@ -222,43 +199,48 @@ static void UpdateDrawFrame(void)
 
     if (!onTransition)
     {
+        screens_map[currentScreen]->UpdateScreen();
         switch(currentScreen)
         {
-            case LOGO:
+            case Screen::LOGO:
             {
-                UpdateLogoScreen();
+                // UpdateLogoScreen();
+                // logo_screen.UpdateScreen();
 
-                if (FinishLogoScreen()) TransitionToScreen(TITLE);
+                if (screens_map[currentScreen]->FinishScreen()) TransitionToScreen(Screen::TITLE);
 
             } break;
-            case TITLE:
+            case Screen::TITLE:
             {
-                UpdateTitleScreen();
+                // UpdateTitleScreen();
+                // title_screen.UpdateScreen();
 
-                if (FinishTitleScreen() == 1) TransitionToScreen(OPTIONS);
-                else if (FinishTitleScreen() == 2) TransitionToScreen(GAMEPLAY);
+                if (screens_map[currentScreen]->FinishScreen() == 1) TransitionToScreen(Screen::OPTIONS);
+                else if (screens_map[currentScreen]->FinishScreen() == 2) TransitionToScreen(Screen::GAMEPLAY);
 
             } break;
-            case OPTIONS:
+            // case Screen.OPTIONS:
+            // {
+            //     UpdateOptionsScreen();
+
+            //     if (FinishOptionsScreen()) TransitionToScreen(Screen.TITLE);
+
+            // } break;
+            case Screen::GAMEPLAY:
             {
-                UpdateOptionsScreen();
-
-                if (FinishOptionsScreen()) TransitionToScreen(TITLE);
-
-            } break;
-            case GAMEPLAY:
-            {
-                UpdateGameplayScreen();
-
-                if (FinishGameplayScreen() == 1) TransitionToScreen(ENDING);
+                // UpdateGameplayScreen();
+                if (screens_map[currentScreen]->FinishScreen() == 1) TransitionToScreen(Screen::ENDING);
+                if (screens_map[currentScreen]->FinishScreen() == 2) TransitionToScreen(Screen::TITLE);
+                // if (FinishGameplayScreen() == 1) TransitionToScreen(Screen::ENDING);
                 //else if (FinishGameplayScreen() == 2) TransitionToScreen(TITLE);
 
             } break;
-            case ENDING:
+            case Screen::ENDING:
             {
-                UpdateEndingScreen();
+                // UpdateEndingScreen();
 
-                if (FinishEndingScreen() == 1) TransitionToScreen(TITLE);
+                // if (FinishEndingScreen() == 1) TransitionToScreen(Screen::TITLE);
+                if (screens_map[currentScreen]->FinishScreen() == 1) TransitionToScreen(Screen::TITLE);
 
             } break;
             default: break;
@@ -272,16 +254,7 @@ static void UpdateDrawFrame(void)
     BeginDrawing();
 
         ClearBackground(RAYWHITE);
-
-        switch(currentScreen)
-        {
-            case LOGO: DrawLogoScreen(); break;
-            case TITLE: DrawTitleScreen(); break;
-            case OPTIONS: DrawOptionsScreen(); break;
-            case GAMEPLAY: DrawGameplayScreen(); break;
-            case ENDING: DrawEndingScreen(); break;
-            default: break;
-        }
+        screens_map[currentScreen]->DrawScreen();
 
         // Draw full screen rectangle in front of everything
         if (onTransition) DrawTransition();
